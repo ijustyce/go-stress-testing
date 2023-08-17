@@ -2,8 +2,10 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -64,25 +66,36 @@ func HTTPRequest(chanID uint64, request *model.Request) (resp *http.Response, re
 		return
 	} else {
 		req.Close = true
-		tr := &http.Transport{}
 		if request.HTTP2 {
 			// 使用真实证书 验证证书 模拟真实请求
-			tr = &http.Transport{
+			tr := &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
 			}
-			if err = http2.ConfigureTransport(tr); err != nil {
+			tr2, err2 := http2.ConfigureTransports(tr)
+			if err2 != nil {
 				return
+			}
+			tr2.AllowHTTP = true
+			tr2.DialTLSContext = func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+				conn, err := net.DialTimeout(network, addr, 30*time.Second)
+				if err != nil {
+					panic(err)
+				}
+				return conn, err
+			}
+			client = &http.Client{
+				Transport: tr2,
+				Timeout:   timeout,
 			}
 		} else {
 			// 跳过证书验证
-			tr = &http.Transport{
+			tr := &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   timeout,
+			client = &http.Client{
+				Transport: tr,
+				Timeout:   timeout,
+			}
 		}
 	}
 
